@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2>Welcome, {{ user.username }}</h2>
+        <p class="lead">Employee Dashboard</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header">
+                <h4>Your Information</h4>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item"><strong>Username:</strong> {{ user.username }}</li>
+                    <li class="list-group-item"><strong>Email:</strong> {{ user.email }}</li>
+                    <li class="list-group-item"><strong>PO Number:</strong> {{ user.po_number }}</li>
+                    <li class="list-group-item"><strong>Status:</strong> 
+                        {% if user.is_active %}
+                            <span class="badge bg-success">Verified</span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark">Pending Verification</span>
+                        {% endif %}
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header">
+                <h4>Quick Actions</h4>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-3">
+                    <a href="#" class="btn btn-solar">View Projects</a>
+                    <a href="#" class="btn btn-outline-primary">Submit Report</a>
+                    <a href="#" class="btn btn-outline-secondary">Request Support</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col">
+        <div class="card shadow">
+            <div class="card-header">
+                <h4>Recent Activity</h4>
+            </div>
+            <div class="card-body">
+                <p>Your recent activities will appear here.</p>
+                <!-- Placeholder for future activity feed -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

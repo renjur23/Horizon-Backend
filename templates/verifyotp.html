@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Email Verification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .verify-container {
+            background: #0d6efd; /* Bootstrap primary blue */
+            padding: 2rem 2.5rem;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            color: white;
+        }
+        h2 {
+            margin-bottom: 1.5rem;
+            color: white;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            text-align: left;
+            color: white;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 0.7rem;
+            border: none;
+            border-radius: 5px;
+            margin-bottom: 1.5rem;
+            font-size: 1rem;
+            background-color: #e9ecef;
+            color: black;
+        }
+        button {
+            background-color: white;
+            color: #0d6efd;
+            border: none;
+            padding: 0.7rem 1.5rem;
+            font-size: 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s ease-in-out;
+        }
+        button:hover {
+            background-color: #d1e3ff;
+        }
+        .message {
+            margin-bottom: 1rem;
+            font-weight: bold;
+        }
+        .message.error,
+        .message.danger {
+            color: #ffcccc;
+        }
+        .message.success {
+            color: #caffd1;
+        }
+    </style>
+</head>
+<body>
+    <div class="verify-container">
+        <h2>Email Verification</h2>
+
+        {% if messages %}
+            {% for message in messages %}
+                <p class="message {% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+            <label for="otp">Enter OTP:</label>
+            <input type="text" name="otp" id="otp" required>
+            <button type="submit">Verify</button>
+        </form>
+    </div>
+</body>
+</html>
