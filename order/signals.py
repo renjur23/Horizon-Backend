@@ -52,13 +52,13 @@ Remarks       : {instance.remarks or 'None'}
 
         # Recipients
         recipient_list = [
-            'steevo@offgridenergy.ie',
-            'Jp@generatorhire.ie',
-            'anna@offgridenergy.ie',
-            'David@horizonplant.com',
+            # 'steevo@offgridenergy.ie',
+            # 'Jp@generatorhire.ie',
+            # 'anna@offgridenergy.ie',
+            # 'David@horizonplant.com',
             'swathy.horizonoffgrid@gmail.com',
-            'john@generatorhire.ie',
-            # 'renjurenjithrajendran@gmail.com'
+            # 'john@generatorhire.ie',
+            'renjurenjithrajendran@gmail.com'
         ]
 
         if instance.issued_to and instance.issued_to.client_email:

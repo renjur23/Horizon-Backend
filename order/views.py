@@ -1,4 +1,4 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated,IsAuthenticatedOrReadOnly
 from authentication.permissions import IsAdminOrEmployeeCanCreate
 from .models import (
@@ -28,6 +28,9 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Sum,FloatField,F
 from rest_framework.decorators import action
 from django.utils.timezone import now
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -63,6 +66,9 @@ class InverterViewSet(viewsets.ModelViewSet):
     queryset = Inverter.objects.all()
     serializer_class = InverterSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['unit_id', 'model', 'serial_no', 'inverter_status__inverter_status_name']
+    
     
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -70,11 +76,10 @@ class InverterViewSet(viewsets.ModelViewSet):
         status = self.request.query_params.get("status")
         if status:
             queryset = queryset.filter(
-                inverter_status_inverter_status_name_iexact=status
+                inverter_status__inverter_status_name__iexact=status
             )
 
         return queryset
-
 
 class GeneratorViewSet(viewsets.ModelViewSet):
     queryset = Generator.objects.all()
@@ -184,7 +189,55 @@ class OrderViewSet(viewsets.ModelViewSet):
             order.inverter_id.inverter_status = testing_status
             order.inverter_id.save()
 
-        return Response({"message": "Order offhired successfully."}, status=status.HTTP_200_OK)
+        inverter_name = "N/A"
+        if order.inverter_id:
+            inverter_parts = [
+                order.inverter_id.given_start_name or "",
+                order.inverter_id.model or "",
+                order.inverter_id.serial_no or "",
+            ]
+            inverter_name = " ".join(filter(None, inverter_parts))
+            
+            offhired_by_name = getattr(request.user, "name", request.user.username)
+            offhired_by_email = getattr(request.user, "email", "N/A")
+
+        # ✅ Email content
+        subject = 'Inverter Unit Offhired'
+        message = f"""
+    The following inverter unit has been offhired:
+
+    Unit          : {inverter_name}
+    PO Number     : {order.po_number}
+    Contract No   : {order.contract_no}
+    Client        : {order.issued_to.client_name if order.issued_to else 'N/A'}
+    End Date      : {order.end_date}
+    Location      : {getattr(order.location_id, 'location_name', 'N/A')}
+    Remarks       : {order.remarks or 'None'}
+    Offhired By   : {offhired_by_name} ({offhired_by_email})
+    """
+
+        from_email = settings.DEFAULT_FROM_EMAIL
+        recipient_list = [
+            # 'steevo@offgridenergy.ie',
+            # 'Jp@generatorhire.ie',
+            # 'anna@offgridenergy.ie',
+            # 'David@horizonplant.com',
+            # 'swathy.horizonoffgrid@gmail.com',
+            # 'john@generatorhire.ie',
+            'renjurenjithrajendran@gmail.com'
+        ]
+
+        if order.issued_to and order.issued_to.client_email:
+            recipient_list.append(order.issued_to.client_email)
+
+        try:
+            send_mail(subject, message, from_email, recipient_list, fail_silently=False)
+            logger.info(f"✅ Offhire email sent for PO {order.po_number}, unit {inverter_name}")
+        except Exception as e:
+            logger.error(f"❌ Error sending offhire email for PO {order.po_number}: {str(e)}")
+
+        return Response({"message": f"Order offhired successfully. Email sent for unit {inverter_name}."},
+                        status=status.HTTP_200_OK)
 
 
 
@@ -193,6 +246,9 @@ class InverterSimDetailViewSet(viewsets.ModelViewSet):
     queryset = InverterSimDetail.objects.all().order_by('inverter_id__unit_id')
     serializer_class = InverterSimDetailSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['phone_number', 'serial_no', 'user_no', 'inverter_id__given_name', 
+    'inverter_id__serial_no', ]
 
 
 class InverterUtilizationStatusViewSet(viewsets.ModelViewSet):

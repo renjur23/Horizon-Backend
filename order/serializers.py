@@ -317,7 +317,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_created_by(self, obj):
         if obj.created_by:
-            return obj.created_by.email
+            return obj.created_by.name
         return None
 
 

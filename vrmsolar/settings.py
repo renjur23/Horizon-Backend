@@ -8,6 +8,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
 
+
+import os
+
+VRM_API_KEY = os.getenv("VRM_API_KEY", "")
+
+
 # Setup logger
 logger = logging.getLogger(__name__)
 
@@ -68,6 +74,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+   
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -79,6 +86,8 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
 
 ]
+if DJANGO_ENV == "local":
+    MIDDLEWARE.insert(0, "vrmsolar.middleware.no_cache.DisableClientCacheMiddleware")
 
 ROOT_URLCONF = "vrmsolar.urls"
 
@@ -226,9 +235,9 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),  # default is 5
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "AUTH_HEADER_TYPES": ("Bearer",),
-    "ROTATE_REFRESH_TOKENS": False,
+    "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
 }
 
@@ -277,4 +286,13 @@ CORS_ALLOWED_ORIGINS = [
 
 # settings.py
 LOGOUT_REDIRECT_URL = '/admin/login/'
+
+# Production cache-busting for static files
+if DJANGO_ENV == "production":
+    STATICFILES_STORAGE = "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"
+
+
+
+DATA_UPLOAD_MAX_NUMBER_FIELDS = None   # disables the check completely
+DATA_UPLOAD_MAX_MEMORY_SIZE = 26214400  # 25 MB, adjust if needed
 

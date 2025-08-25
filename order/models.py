@@ -58,7 +58,11 @@ class Inverter(models.Model):
         InverterStatus, on_delete=models.SET_NULL, null=True, related_name="inverters"
     )
     remarks = models.TextField(blank=True, null=True)
-    link_to_installation = models.CharField(max_length=255, blank=True, null=True)
+    link_to_installation = models.CharField(
+    max_length=255, blank=True, null=True,
+    help_text="Enter or auto-sync VRM Installation ID")
+    
+
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):
