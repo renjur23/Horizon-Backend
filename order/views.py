@@ -4,7 +4,8 @@ from authentication.permissions import IsAdminOrEmployeeCanCreate
 from .models import (
     Client, Location, InverterStatus, Inverter, Generator,
     SiteContact, Order, InverterSimDetail, InverterUtilizationStatus,
-    InverterUtilization, ServiceStatus, ServiceRecords, Usage, Checklist, ChecklistItem, BatteryVoltage
+    InverterUtilization, ServiceStatus, ServiceRecords, Usage, 
+    Checklist, ChecklistItem, BatteryVoltage
 )
 from .serializers import *
 from authentication.permissions import IsAdminUser, AdminOnlyFieldsPermission
@@ -32,15 +33,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-
-
-
-
-
-
-
-
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.all()
     serializer_class = ClientSerializer
@@ -67,7 +59,7 @@ class InverterViewSet(viewsets.ModelViewSet):
     serializer_class = InverterSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter]
-    search_fields = ['unit_id', 'model', 'serial_no', 'inverter_status__inverter_status_name']
+    search_fields = ['unit_id', 'model', 'serial_no', 'inverter_status__inverter_status_name','given_name']
     
     
     def get_queryset(self):
@@ -247,8 +239,10 @@ class InverterSimDetailViewSet(viewsets.ModelViewSet):
     serializer_class = InverterSimDetailSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter]
-    search_fields = ['phone_number', 'serial_no', 'user_no', 'inverter_id__given_name', 
+    search_fields = ['phone_number', 'serial_no', 'inverter_id__given_name', 
     'inverter_id__serial_no', ]
+    
+   
 
 
 class InverterUtilizationStatusViewSet(viewsets.ModelViewSet):
@@ -470,15 +464,36 @@ class InverterUsageReportView(APIView):
         })
         
 class ChecklistViewSet(viewsets.ModelViewSet):
-    queryset = Checklist.objects.all().order_by('-date')
+    queryset = Checklist.objects.all().order_by('created_at')
     serializer_class = ChecklistSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
-    
+
     def create(self, request, *args, **kwargs):
+        """
+        Custom create:
+        - Accept nested items + batteries
+        - Return detailed response with nested serializers
+        """
         serializer = self.get_serializer(data=request.data)
-        if not serializer.is_valid():
-            print(serializer.errors)  # 👈 add this
-            return Response(serializer.errors, status=400)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=201, headers=headers)
+        serializer.is_valid(raise_exception=True)
+
+        checklist = serializer.save()  # ✅ uses nested create logic in ChecklistSerializer
+        read_serializer = self.get_serializer(checklist)
+
+        return Response(read_serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        """
+        Custom update:
+        - Handle updating checklist, items, and batteries
+        """
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+
+        checklist = serializer.save()
+        read_serializer = self.get_serializer(checklist)
+
+        return Response(read_serializer.data, status=status.HTTP_200_OK)

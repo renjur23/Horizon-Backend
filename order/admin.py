@@ -86,6 +86,7 @@ class UsageAdmin(admin.ModelAdmin):
     raw_id_fields = ('inverter_id', 'order_id')
     date_hierarchy = 'date'
 
+# ---------------- INLINE MODELS ---------------- #
 class ChecklistItemInline(admin.TabularInline):
     model = ChecklistItem
     extra = 0
@@ -94,16 +95,47 @@ class BatteryVoltageInline(admin.TabularInline):
     model = BatteryVoltage
     extra = 0
 
+class ChecklistImageInline(admin.TabularInline):  
+    model = ChecklistImage
+    extra = 1
+
+
+# ---------------- MAIN CHECKLIST ADMIN ---------------- #
 @admin.register(Checklist)
 class ChecklistAdmin(admin.ModelAdmin):
-    list_display = ('unit_no', 'unit_model', 'tested_by', 'unit_status', 'date','test_time')
-    search_fields = ('unit_no', 'unit_model', 'tested_by')
-    list_filter = ('unit_status', 'date')
-    date_hierarchy = 'date' 
-    inlines = [ChecklistItemInline, BatteryVoltageInline]
-    readonly_fields = ('date','test_time')
+    list_display = (
+        'inverter',       # FK → shows unit_id from Inverter.__str__()
+        'unit_model',     # custom method
+        'tested_by',
+        'unit_status',
+        'date',
+        'test_time',
+    )
+    search_fields = ('inverter__unit_id', 'inverter__unit_model', 'tested_by')
+    list_filter = ('unit_status', 'date', 'inverter')
+    date_hierarchy = 'date'
+    inlines = [ChecklistItemInline, BatteryVoltageInline, ChecklistImageInline]
+    readonly_fields = ('date', 'test_time')
 
-# Optional: Registering other models separately (if needed)
+    # ✅ Limit inverter dropdown to those in "Testing" state
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "inverter":
+            kwargs["queryset"] = Inverter.objects.filter(inverter_status__inverter_status_name="Testing")
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    # ✅ Auto-fill date if not set
+    def save_model(self, request, obj, form, change):
+        if not obj.date:
+            obj.date = timezone.now().date()
+        super().save_model(request, obj, form, change)
+
+    # ✅ Custom column to show inverter model
+    def unit_model(self, obj):
+        return obj.inverter.model if obj.inverter else "-"
+    unit_model.short_description = "Model"
+    unit_model.admin_order_field = "inverter__unit_model"
+
+# ---------------- REGISTER INLINE MODELS ---------------- #
 @admin.register(ChecklistItem)
 class ChecklistItemAdmin(admin.ModelAdmin):
     list_display = ('checklist', 'section', 'description', 'status')
@@ -111,3 +143,9 @@ class ChecklistItemAdmin(admin.ModelAdmin):
 @admin.register(BatteryVoltage)
 class BatteryVoltageAdmin(admin.ModelAdmin):
     list_display = ('checklist', 'battery_number', 'voltage')
+    
+    
+@admin.register(ChecklistImage)  
+class ChecklistImageAdmin(admin.ModelAdmin):
+    list_display = ("id", "checklist", "image")
+    search_fields = ("checklist__id",)

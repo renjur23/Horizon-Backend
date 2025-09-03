@@ -2,10 +2,14 @@ from rest_framework import serializers
 from .models import (
     Order, Client, Location, Inverter, Generator, SiteContact,
     InverterStatus, InverterSimDetail, InverterUtilizationStatus,
-    InverterUtilization, ServiceStatus, ServiceRecords, Usage,Checklist, ChecklistItem, BatteryVoltage
+    InverterUtilization, ServiceStatus, ServiceRecords, Usage,
+    Checklist, ChecklistItem, BatteryVoltage,ChecklistImage
 )
 from rest_framework.exceptions import ValidationError
-
+from datetime import timedelta
+from django.utils.timezone import now
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 
 
 # Supporting (Related) Serializers
@@ -320,47 +324,136 @@ class OrderSerializer(serializers.ModelSerializer):
             return obj.created_by.name
         return None
 
-
 class ChecklistItemSerializer(serializers.ModelSerializer):
+    checklist_id = serializers.PrimaryKeyRelatedField(
+        source="checklist", queryset=Checklist.objects.all(), required=False
+    )
+
     class Meta:
         model = ChecklistItem
-        fields = ['id', 'section', 'description', 'status', 'remarks']
+        fields = ['id', 'checklist_id', 'section', 'description', 'status', 'remarks']
+        read_only_fields = ['id']
+
+    def validate_status(self, value):
+        """Ensure status has only allowed values (OK, NOT_OK, NA)."""
+        allowed_status = ["OK", "NOT_OK", "NA"]
+        if value not in allowed_status:
+            raise serializers.ValidationError(
+                f"Status must be one of {allowed_status}, got '{value}'."
+            )
+        return value
+
 
 class BatteryVoltageSerializer(serializers.ModelSerializer):
+    checklist_id = serializers.PrimaryKeyRelatedField(
+        source="checklist", queryset=Checklist.objects.all(), required=False
+    )
+
     class Meta:
         model = BatteryVoltage
-        fields = ['id', 'battery_number', 'voltage']
+        fields = ['id', 'checklist_id', 'battery_number', 'voltage']
+        read_only_fields = ['id']
+
+    def validate_battery_number(self, value):
+        """Battery number must be 1 → 25 only."""
+        if value <= 0 or value > 25:
+            raise serializers.ValidationError("Battery number must be between 1 and 25.")
+        return value
+    
+
+class ChecklistImageSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ChecklistImage
+        fields = ["id", "image"]
+
+    def get_image(self, obj):
+        request = self.context.get("request")
+        if obj.image and request:
+            return request.build_absolute_uri(obj.image.url)  # full URL
+        return obj.image.url if obj.image else None
 
 class ChecklistSerializer(serializers.ModelSerializer):
-    items = ChecklistItemSerializer(many=True)
-    batteries = BatteryVoltageSerializer(many=True)
+    items = ChecklistItemSerializer(many=True, required=False)
+    batteries = BatteryVoltageSerializer(many=True, required=False)
+    images = ChecklistImageSerializer(many=True, required=False)
+
+
+    # Inverter fields (FK)
+    unit_no = serializers.CharField(source="inverter.unit_id", read_only=True)
+    inverter_model = serializers.CharField(source="inverter.model", read_only=True)
+    status = serializers.SerializerMethodField()
 
     class Meta:
         model = Checklist
-        fields = '__all__'
+        fields = [
+            "id",
+            "inverter",
+            "unit_no",
+            "inverter_model",
+            "status",
+            "test_time_start",
+            "test_time_end",
+            "test_time",
+            "load",
+            "battery_voltage_start",
+            "battery_voltage_end",
+            "voltage_dip",
+            "unit_status",
+            "tested_by",
+            "date",
+            "items",
+            "batteries", 
+            "images"
+        ]
+        read_only_fields = ["unit_no", "inverter_model", "status", "test_time"]
 
     def create(self, validated_data):
-        items_data = validated_data.pop('items', [])
-        batteries_data = validated_data.pop('batteries', [])
+        items_data = validated_data.pop("items", [])
+        batteries_data = validated_data.pop("batteries", [])
+        images_data = self.context["request"].FILES.getlist("images")
 
-        try:
+        inverter = validated_data["inverter"]
+        unit_status = validated_data.get("unit_status")
+        with transaction.atomic():
+            # 1. Create checklist
             checklist = Checklist.objects.create(**validated_data)
-        except Exception as e:
-            raise ValidationError(f"Error creating Checklist: {e}")
 
-        for item in items_data:
-            try:
+            # 2. Save nested items
+            for item in items_data:
                 ChecklistItem.objects.create(checklist=checklist, **item)
-            except Exception as e:
-                raise ValidationError(f"Error creating ChecklistItem: {e}")
 
-        for battery in batteries_data:
-            try:
+            # 3. Save nested batteries
+            for battery in batteries_data:
                 BatteryVoltage.objects.create(checklist=checklist, **battery)
-            except Exception as e:
-                raise ValidationError(f"Error creating BatteryVoltage: {e}")
+                
+                
+            # 4. Save nested images
+            for image_file in images_data:
+                ChecklistImage.objects.create(checklist=checklist, image=image_file)
+
+             # 5. Update inverter status based on unit_status
+            if unit_status == "Operational(Ready to Hire)":
+                new_status = get_object_or_404(
+                    InverterStatus, inverter_status_name="Operational(Ready to Hire)"
+                )
+            elif unit_status == "Under Maintenance":
+                new_status = get_object_or_404(
+                    InverterStatus, inverter_status_name="Breakdown"
+                )
+            else:
+                # fallback if unknown
+                new_status = inverter.inverter_status  
+
+            inverter.inverter_status = new_status
+            inverter.save(update_fields=["inverter_status"])
 
         return checklist
 
-
-
+    def get_status(self, obj):
+        """Compute inverter status dynamically with expiry check."""
+        expiry_date = obj.date + timedelta(days=30)
+        if now().date() > expiry_date:
+            return "Testing"
+        return obj.inverter.inverter_status.inverter_status_name

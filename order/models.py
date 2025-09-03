@@ -267,55 +267,93 @@ class Usage(models.Model):
         verbose_name = "Usage Record"
         verbose_name_plural = "Usage Records"
         
-STATUS_CHOICES =  [('OK', 'OK'),
-        ('NOT_OK', 'Not OK'),
-        ('NA', 'Not Applicable'),]
+STATUS_CHOICES = [
+    ('OK', 'OK'),
+    ('NOT_OK', 'Not OK'),
+    ('NA', 'Not Applicable'),
+]
 
 UNIT_STATUS_CHOICES = [
-    ('Ready for Hire', 'Ready for Hire'),
+    ("Operational(Ready to Hire)", "Operational(Ready to Hire)"),
     ('Under Maintenance', 'Under Maintenance'),
 ]
 
+
 class Checklist(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    unit_no = models.CharField(max_length=100)
-    unit_model = models.CharField(max_length=100)
-    test_time_start = models.TimeField(null=True, blank=True)
-    test_time_end = models.TimeField(null=True, blank=True)
-    test_time = models.DurationField(null=True, blank=True) 
+    inverter = models.ForeignKey(
+        "Inverter",
+        on_delete=models.CASCADE,
+        null=True,
+        related_name="checklists"
+    )
+
+    test_time_start = models.DateTimeField(null=True, blank=True)
+    test_time_end = models.DateTimeField(null=True, blank=True)
+    test_time = models.DurationField(null=True, blank=True)
+
     load = models.CharField(max_length=100, blank=True)
     battery_voltage_start = models.CharField(max_length=20, blank=True)
     battery_voltage_end = models.CharField(max_length=20, blank=True)
     voltage_dip = models.CharField(max_length=20, blank=True)
-    unit_status = models.CharField(max_length=20, choices=UNIT_STATUS_CHOICES)
-    tested_by = models.CharField(max_length=100)
-    date = models.DateField()
 
+    unit_status = models.CharField(max_length=50, choices=UNIT_STATUS_CHOICES)
+    tested_by = models.CharField(max_length=100)
+    date = models.DateField(auto_now_add=True)  # auto fill on creation
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
+    # ✅ Calculate duration
         if self.test_time_start and self.test_time_end:
-            start_dt = datetime.combine(date.today(), self.test_time_start)
-            end_dt = datetime.combine(date.today(), self.test_time_end)
-
-            # Handle wrap-around (e.g., end time is past midnight)
-            if end_dt < start_dt:
+            end_dt = self.test_time_end
+            start_dt = self.test_time_start
+            if end_dt < start_dt:  # overnight case
                 end_dt += timedelta(days=1)
-
             self.test_time = end_dt - start_dt
+
+        # ✅ Sync inverter status with mapping
+        if self.inverter and self.unit_status:
+            status_map = {
+                "Ready to Hire": "Operational(Ready to Hire)",
+                "Under Maintenance": "Breakdown",
+            }
+            status_name = status_map.get(self.unit_status)
+            if status_name:
+                    inverter_status_obj, _ = InverterStatus.objects.get_or_create(
+                        inverter_status_name=status_name
+                    )
+                    self.inverter.inverter_status = inverter_status_obj
+                    self.inverter.save(update_fields=["inverter_status"])
 
         super().save(*args, **kwargs)
 
-    def _str_(self):
-        return f"{self.unit_no} - {self.unit_model}"
+    def __str__(self):
+        return f"Checklist for {self.inverter.unit_id if self.inverter else 'Unknown'} on {self.date}"
+
 
 class ChecklistItem(models.Model):
     checklist = models.ForeignKey(Checklist, on_delete=models.CASCADE, related_name='items')
     section = models.CharField(max_length=100) 
-    description = models.TextField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
-    remarks = models.TextField(blank=True,null=True)
+    description = models.TextField() 
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="NA")
+    remarks = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.section}: {self.description[:40]} ({self.status})"
+
 
 class BatteryVoltage(models.Model):
     checklist = models.ForeignKey(Checklist, on_delete=models.CASCADE, related_name='batteries')
-    battery_number = models.PositiveIntegerField()
+    battery_number = models.PositiveIntegerField() 
     voltage = models.CharField(max_length=20, blank=True)
+
+    def __str__(self):
+        return f"Battery {self.battery_number}: {self.voltage}"
+    
+class ChecklistImage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    checklist = models.ForeignKey(Checklist, related_name="images", on_delete=models.CASCADE)
+    image = models.ImageField(upload_to="checklist_images/")
+
+    def __str__(self):
+         return f"Image for Checklist {self.checklist.id} ({self.checklist.inverter.unit_id})"
