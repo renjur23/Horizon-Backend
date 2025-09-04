@@ -371,23 +371,7 @@ class UsageUploadView(APIView):
         }, status=201)
 
 
-class InverterStatusSummaryView(APIView):
-    permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        status_counts = (
-            Inverter.objects
-            .values('inverter_status__inverter_status_name')
-            .annotate(count=Count('id'))
-        )
-
-        summary = {
-            entry['inverter_status__inverter_status_name']: entry['count']
-            for entry in status_counts
-        }
-        return Response(summary)
-    
-    
 
 
 class InverterUsageReportView(APIView):
@@ -497,3 +481,22 @@ class ChecklistViewSet(viewsets.ModelViewSet):
         read_serializer = self.get_serializer(checklist)
 
         return Response(read_serializer.data, status=status.HTTP_200_OK)
+    
+    
+class InverterStatusSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        status_counts = (
+            Inverter.objects
+            .values('inverter_status__inverter_status_name')
+            .annotate(count=Count('id'))
+        )
+
+        summary = {
+            entry['inverter_status__inverter_status_name']: entry['count']
+            for entry in status_counts
+        }
+        return Response(summary)
+    
+    
