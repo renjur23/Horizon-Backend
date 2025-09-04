@@ -30,6 +30,7 @@ from django.db.models import Sum,FloatField,F
 from rest_framework.decorators import action
 from django.utils.timezone import now
 import logging
+from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +65,15 @@ class InverterViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         queryset = super().get_queryset()
-
-        status = self.request.query_params.get("status")
-        if status:
-            queryset = queryset.filter(
-                inverter_status__inverter_status_name__iexact=status
-            )
-
+        status_param = self.request.query_params.get("status")
+        if status_param:
+            status_list = [s.strip() for s in status_param.split(',') if s.strip()]
+            q = Q()
+            for s in status_list:
+                q |= Q(inverter_status__inverter_status_name__iexact=s)
+            queryset = queryset.filter(q)
         return queryset
+
 
 class GeneratorViewSet(viewsets.ModelViewSet):
     queryset = Generator.objects.all()
