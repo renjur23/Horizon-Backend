@@ -34,7 +34,7 @@ router.register(r'inverter-utilization-statuses', InverterUtilizationStatusViewS
 router.register(r'inverter-utilizations', InverterUtilizationViewSet)
 router.register(r'service-statuses', ServiceStatusViewSet)
 router.register(r'service-records', ServiceRecordsViewSet)
-router.register(r'usages', UsageViewSet)
+router.register(r'usages', UsageViewSet, basename='usage') 
 router.register(r'checklists', ChecklistViewSet)
 
 

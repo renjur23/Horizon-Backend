@@ -126,50 +126,74 @@ class ServiceRecordsSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class UsageSerializer(serializers.ModelSerializer):
-    inverter_usage_calculated = serializers.SerializerMethodField()
-    generator_run_hour_save = serializers.SerializerMethodField()
-    inverter_usage_based_on_site_run_hour = serializers.SerializerMethodField()
-    inverter_usage_based_on_site = serializers.SerializerMethodField()
+    inverter_given_start_name = serializers.CharField(source="inverter_id.given_start_name", read_only=True) 
     inverter_given_name = serializers.CharField(source="inverter_id.given_name", read_only=True)
+    inverter_model = serializers.CharField(source="inverter_id.model", read_only=True)
     inverter_unit_id = serializers.CharField(source="inverter_id.unit_id", read_only=True)
     po_number = serializers.CharField(source="order_id.po_number", read_only=True)
     location_name = serializers.CharField(source="order_id.location_id.location_name", read_only=True)
     generator_no = serializers.CharField(source="order_id.generator_no.generator_no", read_only=True)
+    
+    inverter_display = serializers.SerializerMethodField()
+    order_display = serializers.SerializerMethodField()
 
-
+    inverter_usage_calculated = serializers.SerializerMethodField()
+    generator_run_hour_save = serializers.SerializerMethodField()
+    inverter_usage_based_on_site_run_hour = serializers.SerializerMethodField()
+    fuel_saved = serializers.SerializerMethodField()
+    fuel_cost_saved = serializers.SerializerMethodField()
+    co2_saved = serializers.SerializerMethodField()
 
     class Meta:
         model = Usage
         fields = [
-            'id', 'inverter_id', 'order_id', 'is_yard', 'date', 'kw_consumed',
-            'generator_run_hour', 'inverter_usage_calculated', 'site_run_hour',
-            'generator_run_hour_save', 'inverter_usage_based_on_site_run_hour',
-            'inverter_usage_based_on_site', 'created_at', 'updated_at',
-            'inverter_given_name', 'inverter_unit_id','po_number',
-            'location_name', 'generator_no'
+            "id", "date", "kw_consumed", "generator_run_hour", "site_run_hour",
+            "inverter_usage_calculated", "generator_run_hour_save",
+            "inverter_usage_based_on_site_run_hour","inverter_model",
+            "inverter_given_name", "inverter_unit_id", "inverter_given_start_name",
+            "po_number", "location_name", "generator_no",
+            "fuel_saved", "fuel_cost_saved", "co2_saved",
+            "inverter_display", "order_display",
         ]
 
- 
     def get_inverter_usage_calculated(self, obj):
-        try:
-            return round((24 - float(obj.generator_run_hour)) / 24, 2)
-        except:
-            return None
+        return round((24 - obj.generator_run_hour) / 24, 2) if obj.generator_run_hour else 0
 
     def get_generator_run_hour_save(self, obj):
-        try:
-            return round(float(obj.site_run_hour) - float(obj.generator_run_hour), 2)
-        except:
-            return None
+        return round(obj.site_run_hour - obj.generator_run_hour, 2) if obj.site_run_hour and obj.generator_run_hour else 0
 
     def get_inverter_usage_based_on_site_run_hour(self, obj):
-        try:
-            return round((float(obj.site_run_hour) - float(obj.generator_run_hour)) / float(obj.site_run_hour), 2)
-        except:
-            return None
+        return round((obj.site_run_hour - obj.generator_run_hour) / obj.site_run_hour, 2) if obj.site_run_hour else 0
 
-    def get_inverter_usage_based_on_site(self, obj):
-        return self.get_inverter_usage_based_on_site_run_hour(obj)
+    def get_fuel_saved(self, obj):
+        fuel_per_hr = obj.order_id.generator_no.fuel_consumption if obj.order_id and obj.order_id.generator_no else 6.8
+        return round(self.get_generator_run_hour_save(obj) * fuel_per_hr, 2)
+
+    def get_fuel_cost_saved(self, obj):
+        fuel_price = obj.order_id.fuel_price if obj.order_id and obj.order_id.fuel_price else 1.25
+        return round(self.get_fuel_saved(obj) * fuel_price, 2)
+
+    def get_co2_saved(self, obj):
+        co2_per_litre = obj.order_id.co2_emission_per_litre if obj.order_id and obj.order_id.co2_emission_per_litre else 2.68
+        return round(self.get_fuel_saved(obj) * co2_per_litre, 2)
+    
+    def get_inverter_display(self, obj):
+        """Build inverter string like: H70 10/46 ... Walls Murphystown (HZE-10/46-070)"""
+        if obj.inverter_id:
+            parts = [
+                obj.inverter_id.given_start_name or "",
+                obj.inverter_id.model or "",
+                obj.inverter_id.serial_no or "",
+              
+            ]
+            return " ".join(filter(None, parts))
+        return None
+
+    def get_order_display(self, obj):
+        """Build PO string like: PO: 17888/49044 - Walls"""
+        if obj.order_id:
+            return f"PO: {obj.order_id.po_number}/{obj.order_id.contract_no} - {obj.order_id.issued_to.client_name}"
+        return None
 
 # Order Serializers
 

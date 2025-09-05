@@ -31,6 +31,8 @@ from rest_framework.decorators import action
 from django.utils.timezone import now
 import logging
 from django.db.models import Q
+from rest_framework.pagination import PageNumberPagination
+
 
 logger = logging.getLogger(__name__)
 
@@ -271,10 +273,32 @@ class ServiceRecordsViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 100
+    page_size_query_param = "page_size"
+    max_page_size = 500
+
 class UsageViewSet(viewsets.ModelViewSet):
-    queryset = Usage.objects.all().order_by('-date') 
     serializer_class = UsageSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        qs = Usage.objects.all().order_by('-date')
+        po_number = self.request.query_params.get("po_number")
+        inverter_id = self.request.query_params.get("inverter_id")
+        from_date = self.request.query_params.get("from_date")
+        to_date = self.request.query_params.get("to_date")
+
+        if po_number:
+            qs = qs.filter(order_id__po_number__iexact=po_number)
+        if inverter_id:
+            qs = qs.filter(inverter_id=inverter_id)
+        if from_date:
+            qs = qs.filter(date__gte=from_date)
+        if to_date:
+            qs = qs.filter(date__lte=to_date)
+        return qs
 
 
 
