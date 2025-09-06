@@ -116,10 +116,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
 
     def partial_update(self, request, *args, **kwargs):
-        data = request.data.copy()
-        instance = self.get_object()  # 🔑 Triggers `has_object_permission`
-        self.check_object_permissions(request, instance)  # 🔐 Enforce per-object permission
-        return super().partial_update(request, *args, **kwargs)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        # 🔑 Return full OrderSerializer so React sees location_name, generator_no, site_contact_name
+        read_serializer = OrderSerializer(instance, context=self.get_serializer_context())
+        return Response(read_serializer.data)
     
     def create(self, request, *args, **kwargs):
         data = request.data.copy()
