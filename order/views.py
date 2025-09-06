@@ -315,6 +315,7 @@ class UsageUploadView(APIView):
         if not excel_file:
             return Response({"error": "No file provided"}, status=400)
 
+        # --- Read Excel into DataFrame ---
         try:
             wb = openpyxl.load_workbook(excel_file)
             sheet_name = "For Access" if "For Access" in wb.sheetnames else wb.sheetnames[0]
@@ -323,6 +324,7 @@ class UsageUploadView(APIView):
         except Exception as e:
             return Response({"error": f"File read error: {str(e)}"}, status=400)
 
+        # --- Column mapping ---
         column_mapping = {
             "Inverter_unit_id": "inverter_unit_id",
             "po_number": "po_number",
@@ -334,75 +336,88 @@ class UsageUploadView(APIView):
 
         required_columns = {"inverter_unit_id", "po_number", "date", "kw_consumed", "generator_run_hour"}
         if not required_columns.issubset(df.columns):
-            return Response({
-                "error": f"Missing required columns. Required: {required_columns}"
-            }, status=400)
+            return Response({"error": f"Missing required columns. Required: {required_columns}"}, status=400)
 
+        # --- Prefetch lookups ---
+        inverter_map = {inv.unit_id: inv for inv in Inverter.objects.all()}
+        order_map = {o.po_number.lower(): o for o in Order.objects.all()}
+
+        # --- Prefetch existing usages (avoid duplicates) ---
+        unique_keys = set()
+        for _, row in df.iterrows():
+            unit_id = str(row["inverter_unit_id"]).strip()
+            po_number = str(row["po_number"]).strip().lower() if not pd.isna(row["po_number"]) else None
+            date_value = pd.to_datetime(row["date"], errors="coerce")
+            if unit_id and date_value:
+                unique_keys.add((unit_id, po_number, date_value.date()))
+
+        existing_usages = set(
+            Usage.objects.filter(
+                inverter_id__unit_id__in=[k[0] for k in unique_keys],
+                order_id__po_number__in=[k[1] for k in unique_keys if k[1]]
+            ).values_list("inverter_id__unit_id", "order_id__po_number", "date")
+        )
+
+        # --- Process rows ---
+        skipped_rows, new_usages = [], []
         success_count = 0
-        skipped_rows = []
 
         for index, row in df.iterrows():
             try:
                 unit_id = str(row["inverter_unit_id"]).strip()
-                po_number = str(row["po_number"]).strip() if not pd.isna(row["po_number"]) else ""
+                po_number = str(row["po_number"]).strip().lower() if not pd.isna(row["po_number"]) else None
+                inverter = inverter_map.get(unit_id)
 
-                inverter = Inverter.objects.filter(unit_id=unit_id).first()
                 if not inverter:
                     skipped_rows.append(f"⚠️ Inverter not found: {unit_id}")
                     continue
 
                 try:
-                    date_value = pd.to_datetime(row["date"])
+                    date_value = pd.to_datetime(row["date"], errors="coerce")
+                    if pd.isna(date_value):
+                        raise ValueError("Invalid date")
                     if is_naive(date_value):
                         date_value = make_aware(date_value)
+
                     kw_consumed = float(row["kw_consumed"])
                     gen_hr = float(row["generator_run_hour"])
                     site_hr = float(row.get("site_run_hour", 24))
-                except Exception as e:
-                    print(e)
+                except Exception:
                     skipped_rows.append(f"❌ Invalid data format at row {index + 2}: {row.to_dict()}")
                     continue
-                # Try to find matching order, but don't skip if not found
-                order = Order.objects.filter(po_number__iexact=po_number).first()
-                print(order)
 
-                existing_usage = Usage.objects.filter(
+                order = order_map.get(po_number) if po_number else None
+
+                if (unit_id, po_number, date_value.date()) in existing_usages:
+                    continue  # Skip duplicates
+
+                usage = Usage(
                     inverter_id=inverter,
                     order_id=order,
-                    date=date_value
-                ).first()
-
-                if existing_usage:
-                    pass
-                  
-                else:
-                    Usage.objects.create(
-                        inverter_id=inverter,
-                        order_id=order,  # This may be None if no order found
-                        is_yard=False,
-                        date=date_value,
-                        kw_consumed=kw_consumed,
-                        generator_run_hour=gen_hr,
-                        site_run_hour=site_hr,
-                        inverter_usage_calculated=str((24 - gen_hr) / 24),
-                        generator_run_hour_save=str(site_hr - gen_hr),
-                        inverter_usage_based_on_site_run_hour=str((site_hr - gen_hr) / site_hr),
-                        inverter_usage_based_on_site=str((site_hr - gen_hr) / site_hr),
-                    )
-
+                    is_yard=False,
+                    date=date_value,
+                    kw_consumed=kw_consumed,
+                    generator_run_hour=gen_hr,
+                    site_run_hour=site_hr,
+                    inverter_usage_calculated=str((24 - gen_hr) / 24),
+                    generator_run_hour_save=str(site_hr - gen_hr),
+                    inverter_usage_based_on_site_run_hour=str((site_hr - gen_hr) / site_hr),
+                    inverter_usage_based_on_site=str((site_hr - gen_hr) / site_hr),
+                )
+                new_usages.append(usage)
                 success_count += 1
 
             except Exception as e:
                 skipped_rows.append(f"❌ Error in row {index + 2}: {str(e)}")
-        print(skipped_rows)
+
+        # --- Bulk insert new records ---
+        if new_usages:
+            Usage.objects.bulk_create(new_usages, ignore_conflicts=True)
+
         return Response({
             "message": f"{success_count} records processed successfully.",
-            "skipped_rows": skipped_rows
+            "skipped_rows": skipped_rows,
         }, status=201)
-
-
-
-
 
 class InverterUsageReportView(APIView):
     permission_classes = [IsAuthenticated]
